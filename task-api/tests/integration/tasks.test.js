@@ -1,27 +1,20 @@
-// supertest lets us test HTTP requests without manually running the server
 const request = require('supertest');
 const app = require('../../src/app');
 const taskService = require('../../src/services/taskService');
 
 describe('Tasks API Integration Tests', () => {
-  // reset tasks array before each test so each test runs independently
   beforeEach(() => {
     taskService._reset();
   });
 
-  // ==========================================
-  // 1. GET /tasks endpoint
-  // ==========================================
   describe('GET /tasks', () => {
-    // happy path: when empty
-    test('returns empty array [] when there are no tasks', async () => {
+    test('returns empty array when no tasks exist', async () => {
       const res = await request(app).get('/tasks');
       expect(res.status).toBe(200);
       expect(res.body).toEqual([]);
     });
 
-    // happy path: returns all tasks
-    test('returns list of all created tasks', async () => {
+    test('returns list of tasks', async () => {
       taskService.create({ title: 'Task 1' });
       taskService.create({ title: 'Task 2' });
 
@@ -32,10 +25,10 @@ describe('Tasks API Integration Tests', () => {
       expect(res.body[1].title).toBe('Task 2');
     });
 
-    // happy path: filter by status
-    test('filters tasks by status query parameter', async () => {
+    test('filters tasks by status', async () => {
       taskService.create({ title: 'Task 1', status: 'todo' });
-      taskService.create({ title: 'Task 2', status: 'done' });
+      taskService.create({ title: 'Task 2', status: 'in_progress' });
+      taskService.create({ title: 'Task 3', status: 'done' });
 
       const res = await request(app).get('/tasks?status=todo');
       expect(res.status).toBe(200);
@@ -43,51 +36,52 @@ describe('Tasks API Integration Tests', () => {
       expect(res.body[0].status).toBe('todo');
     });
 
-    // edge case 1: pagination query params
-    test('handles pagination params page and limit', async () => {
+    test('paginates tasks correctly', async () => {
       taskService.create({ title: 'Task 1' });
       taskService.create({ title: 'Task 2' });
       taskService.create({ title: 'Task 3' });
 
       const res = await request(app).get('/tasks?page=1&limit=2');
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      // NOTE FOR DAY 2: Page 1 offset bug skips items due to offset = page * limit.
+      expect(res.body).toHaveLength(2);
+      expect(res.body[0].title).toBe('Task 1');
+      expect(res.body[1].title).toBe('Task 2');
+
+      const resPage2 = await request(app).get('/tasks?page=2&limit=2');
+      expect(resPage2.status).toBe(200);
+      expect(resPage2.body).toHaveLength(1);
+      expect(resPage2.body[0].title).toBe('Task 3');
     });
 
-    // edge case 2: invalid pagination values
-    test('handles non-numeric pagination params safely', async () => {
+    test('edge case: invalid pagination params fall back to defaults or safe bounds', async () => {
       taskService.create({ title: 'Task 1' });
 
-      const res = await request(app).get('/tasks?page=hello&limit=world');
+      const res = await request(app).get('/tasks?page=abc&limit=xyz');
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
     });
   });
 
-  // ==========================================
-  // 2. GET /tasks/stats endpoint
-  // ==========================================
   describe('GET /tasks/stats', () => {
-    // happy path: calculates stats
-    test('returns accurate counts for statuses and overdue tasks', async () => {
+    test('returns correct counts for tasks and overdue status', async () => {
       const pastDate = new Date(Date.now() - 3600000).toISOString();
       const futureDate = new Date(Date.now() + 3600000).toISOString();
 
-      taskService.create({ title: 'Task 1', status: 'todo', dueDate: pastDate }); // overdue
-      taskService.create({ title: 'Task 2', status: 'in_progress', dueDate: futureDate });
-      taskService.create({ title: 'Task 3', status: 'done', dueDate: pastDate }); // completed task is not overdue
+      taskService.create({ title: 'Overdue Task', status: 'todo', dueDate: pastDate });
+      taskService.create({ title: 'Active Task', status: 'in_progress', dueDate: futureDate });
+      taskService.create({ title: 'Done Task', status: 'done', dueDate: pastDate });
 
       const res = await request(app).get('/tasks/stats');
       expect(res.status).toBe(200);
-      expect(res.body.todo).toBe(1);
-      expect(res.body.in_progress).toBe(1);
-      expect(res.body.done).toBe(1);
-      expect(res.body.overdue).toBe(1);
+      expect(res.body).toEqual({
+        todo: 1,
+        in_progress: 1,
+        done: 1,
+        overdue: 1,
+      });
     });
 
-    // edge case: stats when database is empty
-    test('returns zeroes when there are no tasks', async () => {
+    test('returns zero stats when collection is empty', async () => {
       const res = await request(app).get('/tasks/stats');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({
@@ -99,120 +93,111 @@ describe('Tasks API Integration Tests', () => {
     });
   });
 
-  // ==========================================
-  // 3. POST /tasks endpoint
-  // ==========================================
   describe('POST /tasks', () => {
-    // happy path: create task with just title
-    test('creates a task with 201 status code and default fields', async () => {
+    test('creates a new task with minimal valid payload', async () => {
       const res = await request(app)
         .post('/tasks')
-        .send({ title: 'New Test Task' });
+        .send({ title: 'New Task' });
 
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty('id');
-      expect(res.body.title).toBe('New Test Task');
+      expect(res.body.title).toBe('New Task');
       expect(res.body.status).toBe('todo');
       expect(res.body.priority).toBe('medium');
     });
 
-    // happy path: create task with full payload
-    test('creates a task with custom fields provided', async () => {
+    test('creates a task with full valid payload', async () => {
       const payload = {
-        title: 'Project Assignment',
-        description: 'Writing tests for day 1',
+        title: 'Full Task',
+        description: 'Complete with all properties',
         status: 'in_progress',
         priority: 'high',
-        dueDate: '2026-10-20T12:00:00.000Z',
+        dueDate: '2026-11-15T12:00:00.000Z',
       };
 
-      const res = await request(app).post('/tasks').send(payload);
+      const res = await request(app)
+        .post('/tasks')
+        .send(payload);
+
       expect(res.status).toBe(201);
       expect(res.body.title).toBe(payload.title);
       expect(res.body.description).toBe(payload.description);
       expect(res.body.status).toBe(payload.status);
       expect(res.body.priority).toBe(payload.priority);
       expect(res.body.dueDate).toBe(payload.dueDate);
+      expect(res.body.completedAt).toBeNull();
     });
 
-    // edge case 1: missing title
-    test('fails with 400 when title is missing', async () => {
-      const res = await request(app).post('/tasks').send({});
+    test('edge case: rejects creation when title is missing', async () => {
+      const res = await request(app)
+        .post('/tasks')
+        .send({ description: 'No title provided' });
+
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('title is required and must be a non-empty string');
+      expect(res.body.error).toContain('title is required');
     });
 
-    // edge case 2: title is empty string
-    test('fails with 400 when title is empty string or spaces', async () => {
-      const res = await request(app).post('/tasks').send({ title: '   ' });
+    test('edge case: rejects creation when title is empty or whitespace', async () => {
+      const res = await request(app)
+        .post('/tasks')
+        .send({ title: '   ' });
+
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('title is required and must be a non-empty string');
+      expect(res.body.error).toContain('title is required');
     });
 
-    // edge case 3: invalid status
-    test('fails with 400 when status is invalid', async () => {
-      const res = await request(app).post('/tasks').send({ title: 'Task', status: 'wrong' });
+    test('edge case: rejects creation with invalid status', async () => {
+      const res = await request(app)
+        .post('/tasks')
+        .send({ title: 'Task', status: 'not_a_status' });
+
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('status must be one of');
     });
 
-    // edge case 4: invalid priority
-    test('fails with 400 when priority is invalid', async () => {
-      const res = await request(app).post('/tasks').send({ title: 'Task', priority: 'mega-high' });
+    test('edge case: rejects creation with invalid priority', async () => {
+      const res = await request(app)
+        .post('/tasks')
+        .send({ title: 'Task', priority: 'ultra-high' });
+
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('priority must be one of');
     });
 
-    // edge case 5: invalid dueDate format
-    test('fails with 400 when dueDate is not a valid date', async () => {
-      const res = await request(app).post('/tasks').send({ title: 'Task', dueDate: 'invalid-date' });
+    test('edge case: rejects creation with invalid dueDate', async () => {
+      const res = await request(app)
+        .post('/tasks')
+        .send({ title: 'Task', dueDate: 'invalid-iso-date' });
+
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('dueDate must be a valid ISO date string');
+      expect(res.body.error).toContain('dueDate must be a valid ISO date string');
     });
   });
 
-  // ==========================================
-  // 4. PUT /tasks/:id endpoint
-  // ==========================================
   describe('PUT /tasks/:id', () => {
-    // happy path: updating existing task
-    test('updates task and returns 200 status code', async () => {
-      const created = taskService.create({ title: 'Old Title', priority: 'low' });
+    test('updates an existing task', async () => {
+      const created = taskService.create({ title: 'Initial Title', priority: 'low' });
 
       const res = await request(app)
         .put(`/tasks/${created.id}`)
-        .send({ title: 'New Updated Title', priority: 'high' });
+        .send({ title: 'Updated Title', priority: 'high' });
 
       expect(res.status).toBe(200);
-      expect(res.body.title).toBe('New Updated Title');
+      expect(res.body.title).toBe('Updated Title');
       expect(res.body.priority).toBe('high');
     });
 
-    // edge case 1: task id does not exist -> should be 404
-    test('returns 404 when task id is not found', async () => {
+    test('returns 404 when updating non-existent task id', async () => {
       const res = await request(app)
-        .put('/tasks/non-existent-uuid')
-        .send({ title: 'Some Title' });
+        .put('/tasks/non-existent-id')
+        .send({ title: 'Does not exist' });
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Task not found');
     });
 
-    // edge case 2: updating with empty title
-    test('returns 400 when updating with empty title', async () => {
-      const created = taskService.create({ title: 'Good Title' });
-
-      const res = await request(app)
-        .put(`/tasks/${created.id}`)
-        .send({ title: '' });
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('title must be a non-empty string');
-    });
-
-    // edge case 3: updating with invalid status
-    test('returns 400 when updating with invalid status', async () => {
-      const created = taskService.create({ title: 'Good Title' });
+    test('edge case: rejects update with invalid fields', async () => {
+      const created = taskService.create({ title: 'Test Task' });
 
       const res = await request(app)
         .put(`/tasks/${created.id}`)
@@ -221,52 +206,195 @@ describe('Tasks API Integration Tests', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('status must be one of');
     });
+
+    test('edge case: rejects update with empty title', async () => {
+      const created = taskService.create({ title: 'Test Task' });
+
+      const res = await request(app)
+        .put(`/tasks/${created.id}`)
+        .send({ title: '  ' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('title must be a non-empty string');
+    });
   });
 
-  // ==========================================
-  // 5. DELETE /tasks/:id endpoint
-  // ==========================================
   describe('DELETE /tasks/:id', () => {
-    // happy path: delete existing task
-    test('deletes task and returns 204 No Content', async () => {
-      const created = taskService.create({ title: 'Delete me' });
+    test('deletes an existing task and returns 204', async () => {
+      const created = taskService.create({ title: 'Delete Me' });
 
       const res = await request(app).delete(`/tasks/${created.id}`);
       expect(res.status).toBe(204);
-      expect(res.body).toEqual({}); // 204 has no body
+      expect(res.body).toEqual({});
 
-      // confirm it is deleted
       expect(taskService.findById(created.id)).toBeUndefined();
     });
 
-    // edge case: deleting task that does not exist
-    test('returns 404 when deleting non-existent task', async () => {
-      const res = await request(app).delete('/tasks/fake-id-1234');
+    test('edge case: returns 404 when deleting non-existent task', async () => {
+      const res = await request(app).delete('/tasks/00000000-0000-0000-0000-000000000000');
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Task not found');
     });
   });
 
-  // ==========================================
-  // 6. PATCH /tasks/:id/complete endpoint
-  // ==========================================
   describe('PATCH /tasks/:id/complete', () => {
-    // happy path: mark complete
-    test('marks task as done with completedAt timestamp', async () => {
-      const created = taskService.create({ title: 'Complete me', status: 'todo' });
+    test('marks task as completed, setting status to done and preserving priority', async () => {
+      const created = taskService.create({ title: 'Complete Me', priority: 'high', status: 'todo' });
 
       const res = await request(app).patch(`/tasks/${created.id}/complete`);
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('done');
       expect(res.body.completedAt).toBeDefined();
-      // NOTE FOR DAY 2: In completeTask, priority gets hardcoded to 'medium'.
+      expect(res.body.priority).toBe('high');
     });
 
-    // edge case: completing non-existent task
-    test('returns 404 when completing non-existent task', async () => {
+    test('edge case: returns 404 when completing non-existent task', async () => {
       const res = await request(app).patch('/tasks/non-existent-id/complete');
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Task not found');
     });
   });
+
+  describe('PATCH /tasks/:id/assign', () => {
+    test('assigns task to a user', async () => {
+      const created = taskService.create({ title: 'Task to assign' });
+
+      const res = await request(app)
+        .patch(`/tasks/${created.id}/assign`)
+        .send({ assignee: 'Jane Doe' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(created.id);
+      expect(res.body.assignee).toBe('Jane Doe');
+    });
+
+    test('reassigns task when already assigned', async () => {
+      const created = taskService.create({ title: 'Task already assigned', assignee: 'Old Assignee' });
+
+      const res = await request(app)
+        .patch(`/tasks/${created.id}/assign`)
+        .send({ assignee: 'New Assignee' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.assignee).toBe('New Assignee');
+    });
+
+    test('edge case: returns 404 when assigning non-existent task', async () => {
+      const res = await request(app)
+        .patch('/tasks/non-existent-id/assign')
+        .send({ assignee: 'Jane Doe' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Task not found');
+    });
+
+    test('edge case: returns 400 when assignee is missing', async () => {
+      const created = taskService.create({ title: 'Task' });
+
+      const res = await request(app)
+        .patch(`/tasks/${created.id}/assign`)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('assignee is required and must be a non-empty string');
+    });
+
+    test('edge case: returns 400 when assignee is empty or whitespace', async () => {
+      const created = taskService.create({ title: 'Task' });
+
+      const resEmpty = await request(app)
+        .patch(`/tasks/${created.id}/assign`)
+        .send({ assignee: '' });
+      expect(resEmpty.status).toBe(400);
+      expect(resEmpty.body.error).toBe('assignee is required and must be a non-empty string');
+
+      const resWhitespace = await request(app)
+        .patch(`/tasks/${created.id}/assign`)
+        .send({ assignee: '   ' });
+      expect(resWhitespace.status).toBe(400);
+      expect(resWhitespace.body.error).toBe('assignee is required and must be a non-empty string');
+    });
+
+    test('edge case: returns 400 when assignee is not a string', async () => {
+      const created = taskService.create({ title: 'Task' });
+
+      const res = await request(app)
+        .patch(`/tasks/${created.id}/assign`)
+        .send({ assignee: 12345 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('assignee is required and must be a non-empty string');
+    });
+  });
+
+  describe('GET /tasks/:id', () => {
+    test('returns task by id', async () => {
+      const created = taskService.create({ title: 'Find Me' });
+
+      const res = await request(app).get(`/tasks/${created.id}`);
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(created.id);
+      expect(res.body.title).toBe('Find Me');
+    });
+
+    test('returns 404 when task not found', async () => {
+      const res = await request(app).get('/tasks/non-existent-id');
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Task not found');
+    });
+  });
+
+  describe('Combined status filter and pagination', () => {
+    test('applies both status filtering and pagination simultaneously', async () => {
+      taskService.create({ title: 'T1', status: 'todo' });
+      taskService.create({ title: 'T2', status: 'todo' });
+      taskService.create({ title: 'T3', status: 'in_progress' });
+      taskService.create({ title: 'T4', status: 'todo' });
+
+      const res = await request(app).get('/tasks?status=todo&page=1&limit=2');
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+      expect(res.body[0].title).toBe('T1');
+      expect(res.body[1].title).toBe('T2');
+
+      const resPage2 = await request(app).get('/tasks?status=todo&page=2&limit=2');
+      expect(resPage2.status).toBe(200);
+      expect(resPage2.body).toHaveLength(1);
+      expect(resPage2.body[0].title).toBe('T4');
+    });
+  });
+
+  describe('Health check and undefined routes', () => {
+    test('GET /health returns 200 with status healthy and uptime', async () => {
+      const res = await request(app).get('/health');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('healthy');
+      expect(res.body).toHaveProperty('timestamp');
+      expect(res.body).toHaveProperty('uptime');
+    });
+
+    test('returns 404 for undefined routes', async () => {
+      const res = await request(app).get('/non-existent-route');
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Endpoint not found');
+    });
+  });
+
+  describe('Internal Server Error middleware', () => {
+    test('catches unhandled exceptions and returns 500 status', async () => {
+      const getAllSpy = jest.spyOn(taskService, 'getAll').mockImplementationOnce(() => {
+        throw new Error('Simulated unexpected failure');
+      });
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const res = await request(app).get('/tasks');
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('Internal server error');
+
+      getAllSpy.mockRestore();
+      consoleSpy.mockRestore();
+    });
+  });
 });
+
+

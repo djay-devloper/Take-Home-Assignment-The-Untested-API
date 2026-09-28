@@ -1,151 +1,157 @@
-// importing taskService functions to test them
 const taskService = require('../../src/services/taskService');
 
 describe('taskService Unit Tests', () => {
-  // before running each test, reset the array so tests start fresh
   beforeEach(() => {
     taskService._reset();
   });
 
-  // testing create() and getAll()
   describe('create and getAll', () => {
-    // happy path: create a task with minimum inputs
-    test('creates a task with correct default values', () => {
-      const task = taskService.create({ title: 'My first task' });
+    test('creates a task with default values', () => {
+      const task = taskService.create({ title: 'Test Task' });
 
       expect(task).toBeDefined();
-      expect(task.id).toBeDefined(); // uuid should be generated
-      expect(task.title).toBe('My first task');
-      expect(task.description).toBe(''); // default empty description
-      expect(task.status).toBe('todo'); // default status is todo
-      expect(task.priority).toBe('medium'); // default priority is medium
+      expect(task.id).toBeDefined();
+      expect(typeof task.id).toBe('string');
+      expect(task.title).toBe('Test Task');
+      expect(task.description).toBe('');
+      expect(task.status).toBe('todo');
+      expect(task.priority).toBe('medium');
       expect(task.dueDate).toBeNull();
       expect(task.completedAt).toBeNull();
       expect(task.createdAt).toBeDefined();
     });
 
-    // happy path: create a task with custom fields
-    test('creates a task with provided description, status, and priority', () => {
+    test('creates a task with custom fields', () => {
       const task = taskService.create({
-        title: 'Important task',
-        description: 'Need to finish before weekend',
+        title: 'Detailed Task',
+        description: 'Testing description',
         status: 'in_progress',
         priority: 'high',
-        dueDate: '2026-10-01T12:00:00.000Z',
+        dueDate: '2026-12-31T23:59:59.000Z',
       });
 
-      expect(task.title).toBe('Important task');
-      expect(task.description).toBe('Need to finish before weekend');
+      expect(task.title).toBe('Detailed Task');
+      expect(task.description).toBe('Testing description');
       expect(task.status).toBe('in_progress');
       expect(task.priority).toBe('high');
-      expect(task.dueDate).toBe('2026-10-01T12:00:00.000Z');
+      expect(task.dueDate).toBe('2026-12-31T23:59:59.000Z');
     });
 
-    // happy path: getAll returns all created tasks
-    test('getAll returns all tasks created so far', () => {
-      expect(taskService.getAll()).toEqual([]); // empty array initially
+    test('getAll returns all tasks', () => {
+      expect(taskService.getAll()).toEqual([]);
 
       const t1 = taskService.create({ title: 'Task 1' });
       const t2 = taskService.create({ title: 'Task 2' });
 
       const all = taskService.getAll();
       expect(all).toHaveLength(2);
-      expect(all[0].id).toBe(t1.id);
-      expect(all[1].id).toBe(t2.id);
+      expect(all).toEqual([t1, t2]);
     });
 
-    // edge case: modifying returned array should not mutate the internal array
-    test('getAll returns a copy array, not the direct internal reference', () => {
+    test('getAll returns a copy of tasks array, avoiding direct mutation', () => {
       taskService.create({ title: 'Task 1' });
-      const copy = taskService.getAll();
-      copy.pop(); // remove from copy
-      expect(taskService.getAll()).toHaveLength(1); // original should still have 1
+      const all = taskService.getAll();
+      all.pop();
+      expect(taskService.getAll()).toHaveLength(1);
     });
   });
 
-  // testing findById()
   describe('findById', () => {
-    // happy path: finding existing task
-    test('finds task by its id', () => {
-      const created = taskService.create({ title: 'Find Me' });
+    test('returns task by id when it exists', () => {
+      const created = taskService.create({ title: 'Target' });
       const found = taskService.findById(created.id);
-      expect(found).toBeDefined();
-      expect(found.title).toBe('Find Me');
+      expect(found).toEqual(created);
     });
 
-    // edge case: id does not exist
-    test('returns undefined when id is not in the array', () => {
-      const found = taskService.findById('fake-id-123');
+    test('returns undefined when task does not exist', () => {
+      const found = taskService.findById('non-existent-id');
       expect(found).toBeUndefined();
     });
   });
 
-  // testing getByStatus()
   describe('getByStatus', () => {
-    // happy path: filtering by status
-    test('filters tasks by given status', () => {
-      taskService.create({ title: 'Task A', status: 'todo' });
-      taskService.create({ title: 'Task B', status: 'in_progress' });
-      taskService.create({ title: 'Task C', status: 'done' });
+    test('filters tasks by exact status', () => {
+      const t1 = taskService.create({ title: 'Task 1', status: 'todo' });
+      const t2 = taskService.create({ title: 'Task 2', status: 'in_progress' });
+      const t3 = taskService.create({ title: 'Task 3', status: 'done' });
 
       const todos = taskService.getByStatus('todo');
-      expect(todos).toHaveLength(1);
-      expect(todos[0].status).toBe('todo');
+      expect(todos.map((t) => t.id)).toEqual([t1.id]);
 
       const inProgress = taskService.getByStatus('in_progress');
-      expect(inProgress).toHaveLength(1);
-      expect(inProgress[0].status).toBe('in_progress');
+      expect(inProgress.map((t) => t.id)).toEqual([t2.id]);
+
+      const done = taskService.getByStatus('done');
+      expect(done.map((t) => t.id)).toEqual([t3.id]);
     });
 
-    // NOTE FOR DAY 2: I noticed getByStatus uses t.status.includes(status).
-    // This means a search for 'do' matches both 'todo' and 'done'!
-    // Keeping a note of this bug to report and fix in Day 2.
+    test('does not return tasks on substring/partial matches', () => {
+      taskService.create({ title: 'Task Todo', status: 'todo' });
+      taskService.create({ title: 'Task Done', status: 'done' });
+
+      // Substring 'do' should not return both 'todo' and 'done'
+      const matchDo = taskService.getByStatus('do');
+      expect(matchDo).toHaveLength(0);
+    });
   });
 
-  // testing getPaginated()
   describe('getPaginated', () => {
-    // happy path: getPaginated returns an array
-    test('returns a slice of tasks', () => {
-      taskService.create({ title: 'Task 1' });
-      taskService.create({ title: 'Task 2' });
-      taskService.create({ title: 'Task 3' });
+    test('returns correct slice for page 1', () => {
+      const t1 = taskService.create({ title: 'Task 1' });
+      const t2 = taskService.create({ title: 'Task 2' });
+      const t3 = taskService.create({ title: 'Task 3' });
 
-      const result = taskService.getPaginated(1, 2);
-      expect(Array.isArray(result)).toBe(true);
-      // NOTE FOR DAY 2: There is an off-by-one bug here in taskService.js:
-      // const offset = page * limit;
-      // When page = 1 and limit = 2, offset = 2, which skips tasks 0 and 1!
-      // Will document this in the Day 2 bug report and fix the offset formula.
+      const page1 = taskService.getPaginated(1, 2);
+      expect(page1).toHaveLength(2);
+      expect(page1[0].id).toBe(t1.id);
+      expect(page1[1].id).toBe(t2.id);
     });
 
-    // edge case: page out of bounds
-    test('returns empty array when page offset exceeds task count', () => {
+    test('returns correct slice for page 2', () => {
+      const t1 = taskService.create({ title: 'Task 1' });
+      const t2 = taskService.create({ title: 'Task 2' });
+      const t3 = taskService.create({ title: 'Task 3' });
+
+      const page2 = taskService.getPaginated(2, 2);
+      expect(page2).toHaveLength(1);
+      expect(page2[0].id).toBe(t3.id);
+    });
+
+    test('returns empty array when page is out of bounds', () => {
       taskService.create({ title: 'Task 1' });
-      const result = taskService.getPaginated(10, 10);
+      const result = taskService.getPaginated(5, 10);
       expect(result).toEqual([]);
     });
+
+    test('defaults to page 1 and limit 10 when invalid or missing params are passed', () => {
+      taskService.create({ title: 'Task 1' });
+      const result = taskService.getPaginated(undefined, undefined);
+      expect(result).toHaveLength(1);
+    });
   });
 
-  // testing getStats()
   describe('getStats', () => {
-    // happy path: calculating counts and overdue
-    test('calculates counts by status and overdue tasks', () => {
-      const pastDate = new Date(Date.now() - 1000000).toISOString();
-      const futureDate = new Date(Date.now() + 1000000).toISOString();
+    test('calculates correct status counts and overdue counts', () => {
+      const pastDate = new Date(Date.now() - 86400000).toISOString();
+      const futureDate = new Date(Date.now() + 86400000).toISOString();
 
-      taskService.create({ title: 'Overdue Task', status: 'todo', dueDate: pastDate });
-      taskService.create({ title: 'Future Task', status: 'in_progress', dueDate: futureDate });
-      taskService.create({ title: 'Done Task', status: 'done', dueDate: pastDate }); // completed task is not overdue
+      taskService.create({ title: 'Task 1', status: 'todo', dueDate: pastDate }); // overdue
+      taskService.create({ title: 'Task 2', status: 'in_progress', dueDate: futureDate }); // not overdue
+      taskService.create({ title: 'Task 3', status: 'done', dueDate: pastDate }); // done is never overdue
+      taskService.create({ title: 'Task 4', status: 'todo', dueDate: null }); // no dueDate
+      // Edge case: task with custom or uncounted status
+      taskService.create({ title: 'Task 5', status: 'custom_status' });
 
       const stats = taskService.getStats();
-      expect(stats.todo).toBe(1);
-      expect(stats.in_progress).toBe(1);
-      expect(stats.done).toBe(1);
-      expect(stats.overdue).toBe(1);
+      expect(stats).toEqual({
+        todo: 2,
+        in_progress: 1,
+        done: 1,
+        overdue: 1,
+      });
     });
 
-    // edge case: empty database should return all 0s
-    test('returns 0 for all counts when no tasks exist', () => {
+    test('returns zeroes when no tasks exist', () => {
       const stats = taskService.getStats();
       expect(stats).toEqual({
         todo: 0,
@@ -156,61 +162,91 @@ describe('taskService Unit Tests', () => {
     });
   });
 
-  // testing update()
+
   describe('update', () => {
-    // happy path: updating task
-    test('updates fields of an existing task', () => {
-      const task = taskService.create({ title: 'Original Title' });
-      const updated = taskService.update(task.id, { title: 'New Title' });
+    test('updates existing task fields', () => {
+      const task = taskService.create({ title: 'Old Title', priority: 'low' });
+      const updated = taskService.update(task.id, { title: 'New Title', priority: 'high' });
 
       expect(updated.title).toBe('New Title');
+      expect(updated.priority).toBe('high');
       expect(taskService.findById(task.id).title).toBe('New Title');
     });
 
-    // edge case: updating task that does not exist
-    test('returns null when trying to update non-existent task', () => {
-      const result = taskService.update('non-existent-id', { title: 'Test' });
+    test('returns null when updating non-existent task', () => {
+      const result = taskService.update('invalid-id', { title: 'New' });
       expect(result).toBeNull();
+    });
+
+    test('does not allow mutating id or createdAt', () => {
+      const task = taskService.create({ title: 'Original' });
+      const originalId = task.id;
+      const originalCreatedAt = task.createdAt;
+
+      taskService.update(task.id, { id: 'hacked-id', createdAt: '1999-01-01T00:00:00.000Z' });
+      const current = taskService.findById(originalId);
+      expect(current).toBeDefined();
+      expect(current.id).toBe(originalId);
+      expect(current.createdAt).toBe(originalCreatedAt);
     });
   });
 
-  // testing remove()
   describe('remove', () => {
-    // happy path: deleting task
-    test('removes task and returns true', () => {
-      const task = taskService.create({ title: 'Delete me' });
-      const success = taskService.remove(task.id);
+    test('removes existing task and returns true', () => {
+      const task = taskService.create({ title: 'To Delete' });
+      const deleted = taskService.remove(task.id);
 
-      expect(success).toBe(true);
+      expect(deleted).toBe(true);
       expect(taskService.findById(task.id)).toBeUndefined();
       expect(taskService.getAll()).toHaveLength(0);
     });
 
-    // edge case: deleting task that does not exist
-    test('returns false when task id not found', () => {
-      const success = taskService.remove('non-existent-id');
-      expect(success).toBe(false);
+    test('returns false when task does not exist', () => {
+      const deleted = taskService.remove('non-existent-id');
+      expect(deleted).toBe(false);
     });
   });
 
-  // testing completeTask()
   describe('completeTask', () => {
-    // happy path: completing task
-    test('sets status to done and completedAt timestamp', () => {
-      const task = taskService.create({ title: 'Task to complete', status: 'todo' });
+    test('marks task as done with completedAt timestamp without altering priority', () => {
+      const task = taskService.create({ title: 'Urgent Task', priority: 'high', status: 'todo' });
       const completed = taskService.completeTask(task.id);
 
       expect(completed).toBeDefined();
       expect(completed.status).toBe('done');
       expect(completed.completedAt).toBeDefined();
-      // NOTE FOR DAY 2: I noticed completeTask has `priority: 'medium'` hardcoded,
-      // so it resets existing priority to medium. Noting down for Day 2 bug fix.
+      expect(typeof completed.completedAt).toBe('string');
+      // Priority should remain 'high'
+      expect(completed.priority).toBe('high');
     });
 
-    // edge case: completing non-existent task
-    test('returns null when completing non-existent id', () => {
-      const result = taskService.completeTask('fake-id');
+    test('returns null when task does not exist', () => {
+      const completed = taskService.completeTask('non-existent-id');
+      expect(completed).toBeNull();
+    });
+  });
+
+  describe('assignTask', () => {
+    test('assigns an existing task to a user', () => {
+      const task = taskService.create({ title: 'Design DB' });
+      expect(task.assignee).toBeNull();
+
+      const assigned = taskService.assignTask(task.id, 'Alice');
+      expect(assigned).toBeDefined();
+      expect(assigned.assignee).toBe('Alice');
+      expect(taskService.findById(task.id).assignee).toBe('Alice');
+    });
+
+    test('reassigns a task to another user', () => {
+      const task = taskService.create({ title: 'Review Code', assignee: 'Bob' });
+      const reassigned = taskService.assignTask(task.id, 'Charlie');
+      expect(reassigned.assignee).toBe('Charlie');
+    });
+
+    test('returns null when task does not exist', () => {
+      const result = taskService.assignTask('non-existent-id', 'Alice');
       expect(result).toBeNull();
     });
   });
 });
+

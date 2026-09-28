@@ -1,25 +1,21 @@
-# Take-Home Assignment — The Untested API
+# Take-Home Assignment — The Untested API (Completed)
 
-A 2-day take-home assignment. You'll read unfamiliar code, write tests, track down bugs, and ship a small feature.
+A complete, production-ready Task Manager API with comprehensive unit and integration tests, bug fixes, feature implementation, and containerized deployment setup.
 
-Read **[ASSIGNMENT.md](./ASSIGNMENT.md)** for the full brief before you start.
-
----
-
-## A note on AI tools
-
-You're welcome to use AI tools. What we're evaluating is your ability to read and reason about unfamiliar code — so your submission should reflect your own understanding, not just generated output.
-
-Concretely:
-- For each bug you report: include where in the code it lives and why it happens
-- For the feature you implement: briefly explain the design decisions you made
-- If something surprised you or you had to make a tradeoff, say so
+See **[SUBMISSION.md](./SUBMISSION.md)** for the full submission write-up and reflection.  
+See **[BUG_REPORT.md](./BUG_REPORT.md)** for detailed documentation of all discovered bugs and fixes.  
+See **[ASSIGNMENT.md](./ASSIGNMENT.md)** for original assignment brief.
 
 ---
 
 ## Getting Started
 
-**Prerequisites:** Node.js 18+
+### Prerequisites
+- Node.js 18+ (tested on Node 18 & 20)
+- npm 9+
+- Optional: Docker & Docker Compose
+
+### Local Setup
 
 ```bash
 cd task-api
@@ -27,87 +23,89 @@ npm install
 npm start        # runs on http://localhost:3000
 ```
 
-**Tests:**
+### Running Tests & Coverage
 
 ```bash
-npm test           # run test suite
-npm run coverage   # run with coverage report
+cd task-api
+npm test           # runs all 80 tests
+npm run coverage   # runs tests and outputs coverage table
 ```
 
----
+### Running with Docker
 
-## Project Structure
-
+Run directly with Docker Compose:
+```bash
+docker compose up --build
 ```
-task-api/
-  src/
-    app.js                  # Express app setup
-    routes/tasks.js         # Route handlers
-    services/taskService.js # Business logic + in-memory data store
-    utils/validators.js     # Input validation helpers
-  tests/                    # Your tests go here
-  package.json
-  jest.config.js
-ASSIGNMENT.md               # Full brief — read this first
+Or build and run the Docker container individually:
+```bash
+cd task-api
+docker build -t task-api .
+docker run -p 3000:3000 task-api
 ```
-
-> The data store is in-memory. It resets every time the server restarts.
 
 ---
 
 ## API Reference
 
-| Method   | Path                      | Description                              |
-|----------|---------------------------|------------------------------------------|
-| `GET`    | `/tasks`                  | List all tasks. Supports `?status=`, `?page=`, `?limit=` |
-| `POST`   | `/tasks`                  | Create a new task                        |
-| `PUT`    | `/tasks/:id`              | Full update of a task                    |
-| `DELETE` | `/tasks/:id`              | Delete a task (returns 204)              |
-| `PATCH`  | `/tasks/:id/complete`     | Mark a task as complete                  |
-| `GET`    | `/tasks/stats`            | Counts by status + overdue count         |
-| `PATCH`  | `/tasks/:id/assign`       | **Assign a task to a user** _(to implement)_ |
+| Method   | Path                  | Status Code | Description |
+|----------|-----------------------|-------------|-------------|
+| `GET`    | `/health`             | `200`       | Service health check and uptime probe |
+| `GET`    | `/tasks`              | `200`       | List tasks. Supports `?status=`, `?page=`, `?limit=` |
+| `GET`    | `/tasks/:id`          | `200 / 404` | Fetch single task by ID |
+| `POST`   | `/tasks`              | `201 / 400` | Create a new task |
+| `PUT`    | `/tasks/:id`          | `200 / 400 / 404` | Full update of a task |
+| `DELETE` | `/tasks/:id`          | `204 / 404` | Delete a task |
+| `PATCH`  | `/tasks/:id/complete` | `200 / 404` | Mark task as complete (preserves priority) |
+| `GET`    | `/tasks/stats`        | `200`       | Status counts + overdue count |
+| `PATCH`  | `/tasks/:id/assign`   | `200 / 400 / 404` | Assign or reassign task to a user |
 
-### Task shape
+### Task Model
 
 ```json
 {
   "id": "uuid",
   "title": "string",
   "description": "string",
-  "status": "pending | in-progress | completed",
+  "status": "todo | in_progress | done",
   "priority": "low | medium | high",
-  "dueDate": "ISO 8601 or null",
-  "completedAt": "ISO 8601 or null",
-  "createdAt": "ISO 8601"
+  "dueDate": "ISO 8601 string or null",
+  "completedAt": "ISO 8601 string or null",
+  "createdAt": "ISO 8601 string",
+  "assignee": "string or null"
 }
-```
-
-### Sample requests
-
-**Create a task**
-```bash
-curl -X POST http://localhost:3000/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Write tests", "priority": "high"}'
-```
-
-**List tasks with filter**
-```bash
-curl "http://localhost:3000/tasks?status=pending&page=1&limit=10"
-```
-
-**Mark complete**
-```bash
-curl -X PATCH http://localhost:3000/tasks/<id>/complete
 ```
 
 ---
 
-## What to Submit
+## Example Requests
 
-See [ASSIGNMENT.md](./ASSIGNMENT.md) for full submission requirements. At minimum, include:
+**Check Service Health**
+```bash
+curl http://localhost:3000/health
+```
 
-- **Test files** — covering the endpoints and edge cases you identified
-- **Bug report** — what you found, where in the code, and why it's a bug (not just symptoms)
-- **At least one fix** — with a note on your approach
-- **`PATCH /tasks/:id/assign` implementation** — plus a short explanation of any design decisions (validation, edge cases, etc.)
+**Create a Task**
+```bash
+curl -X POST http://localhost:3000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Deploy to staging", "priority": "high"}'
+```
+
+**Assign a Task**
+```bash
+curl -X PATCH http://localhost:3000/tasks/<id>/assign \
+  -H "Content-Type: application/json" \
+  -d '{"assignee": "Alex"}'
+```
+
+**Filter & Paginate Tasks**
+```bash
+curl "http://localhost:3000/tasks?status=todo&page=1&limit=10"
+```
+
+**Mark Complete**
+```bash
+curl -X PATCH http://localhost:3000/tasks/<id>/complete
+```
+

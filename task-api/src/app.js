@@ -1,32 +1,50 @@
-// importing express for our API server
 const express = require('express');
-// importing task routes
 const taskRoutes = require('./routes/tasks');
 
-// creating the express application
 const app = express();
 
-// middleware to parse incoming JSON request bodies
 app.use(express.json());
 
-// mounting the tasks routes at /tasks
+// Health check endpoint for container probes and deployment monitoring
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
 app.use('/tasks', taskRoutes);
 
-// error handling middleware
+// 404 handler for undefined routes
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Centralized error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// port configuration - default to 3000 if not specified in env
 const PORT = process.env.PORT || 3000;
 
-// only start server if run directly (so tests don't start a second server)
 if (require.main === module) {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Task API running on port ${PORT}`);
   });
+
+  const gracefulShutdown = () => {
+    console.log('Received kill signal, shutting down gracefully...');
+    server.close(() => {
+      console.log('Closed out remaining connections');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
 }
 
-// exporting app for supertest testing
 module.exports = app;
+
